@@ -1,0 +1,69 @@
+name: Firmware build
+
+# Compile-only build of the Tab5 firmware in Espressif's published container
+# for the exact pinned IDF (espressif/idf:v5.4.4 - the official multi-arch
+# image, which local containerized builds use too).
+#
+# manual.bin is REGENERATED here rather than trusted from the repo (this
+# fork's policy - upstream commits it so the firmware build needs no
+# Python/mkdocs). Regeneration uses pack_manual.py's standalone
+# --nav-from-mkdocs mode (stdlib-only); the mkdocs-hook path is authoritative
+# for nav nuance and can differ from this by a few hundred bytes, but both
+# paths run the full verification (context-help deep links + index anchors),
+# so a rotted help link fails this job. The regenerated blob is used for the
+# build and never committed.
+#
+# The six standing patches (tools/patches/*.patch - three for
+# managed_components/, three for the container's IDF tree) ARE applied,
+# via tools/patches/apply_patches.sh, after the component manager has
+# resolved managed_components/ - so the artifact carries the same runtime
+# fixes a bench build does.
+
+on:
+  push:
+    paths:
+      - "main/**"
+      - "components/**"
+      - "CMakeLists.txt"
+      - "sdkconfig"
+      - "sdkconfig.defaults"
+      - "partitions.csv"
+      - "docs/mkdocs/**"
+      - "mkdocs.yml"
+      - "tools/pack_manual.py"
+      - "tools/patches/**"
+      - ".github/workflows/firmware-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v5.4.4
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Regenerate manual.bin from docs (also verifies help deep links)
+        shell: bash
+        run: |
+          git config --global --add safe.directory '*'
+          python3 tools/pack_manual.py --docs docs/mkdocs \
+            --nav-from-mkdocs mkdocs.yml --out main/manual.bin
+
+      - name: Resolve managed components + apply standing patches
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py reconfigure
+          tools/patches/apply_patches.sh
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py build
+
+      - name: Size report
+        shell: bash
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py size

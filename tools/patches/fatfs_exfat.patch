@@ -1,0 +1,22 @@
+qmx-panadapter patch: enable exFAT in FatFs (IDF tree)
+
+ESP-IDF v5.4.4 hardcodes FF_FS_EXFAT 0 with no Kconfig to flip it; >32 GB
+SD cards are exFAT by default and will not mount without it (SD
+auto-archive). exFAT also needs long filenames - enabled in this project's
+sdkconfig (CONFIG_FATFS_LFN_HEAP=y). Harmless to other projects on the same
+IDF: adds exFAT support, FAT still works. Pristine base: ESP-IDF v5.4.4.
+Target: the IDF install tree (re-apply per machine/container).
+
+Apply with:  git -C "$IDF_PATH" apply <this file>   (or patch -p1 -d "$IDF_PATH")
+
+--- a/components/fatfs/src/ffconf.h
++++ b/components/fatfs/src/ffconf.h
+@@ -279,7 +279,7 @@
+ /  buffer in the filesystem object (FATFS) is used for the file data transfer. */
+ 
+ 
+-#define FF_FS_EXFAT		0
++#define FF_FS_EXFAT		1
+ /* This option switches support for exFAT filesystem. (0:Disable or 1:Enable)
+ /  To enable exFAT, also LFN needs to be enabled. (FF_USE_LFN >= 1)
+ /  Note that enabling exFAT discards ANSI C (C89) compatibility. */

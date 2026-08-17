@@ -1,0 +1,23 @@
+qmx-panadapter patch: esp_hosted transport buffers -> PSRAM
+
+Routes the esp_hosted WiFi transport DMA pool (per-packet TX/RX buffers)
+into PSRAM instead of scarce internal DRAM. Without it the pool grows under
+WiFi bursts, exhausts internal DMA RAM under QMX+FT8 load, and panics the
+SDIO TX path (transport_drv_sta_tx -> assert(copy_buff)) -> reboot. Safe on
+ESP32-P4: SOC_SDMMC_PSRAM_DMA_CAPABLE == 1, 1536-byte blocks are 64-byte
+aligned. Target: managed_components (wiped by fullclean/dependency refresh -
+re-apply after either). Pristine base: espressif/esp_hosted 1.4.0.
+
+Apply from the repo root:  git apply tools/patches/esp_hosted_psram.patch
+
+--- a/managed_components/espressif__esp_hosted/host/port/include/os_wrapper.h
++++ b/managed_components/espressif__esp_hosted/host/port/include/os_wrapper.h
+@@ -104,7 +104,7 @@
+ /* This is [malloc + aligned DMA] */
+ #define MEM_ALLOC(x)       ({                                       \
+ 	esp_dma_mem_info_t dma_mem_info = {                             \
+-		.extra_heap_caps = 0,                                       \
++		.extra_heap_caps = MALLOC_CAP_SPIRAM,                                       \
+ 		.dma_alignment_bytes = 64,                                  \
+ 	};                                                              \
+ 	void *tmp_buf = NULL;                                           \

@@ -7,6 +7,10 @@
 *.bat      text eol=crlf
 *.ps1      text eol=crlf
 
+# Unified diffs must stay byte-exact (their targets are LF; a CRLF checkout
+# on Windows would make them fail to apply).
+*.patch    -text
+
 # Firmware images and other binaries: never touch them.
 *.bin      binary
 *.elf      binary

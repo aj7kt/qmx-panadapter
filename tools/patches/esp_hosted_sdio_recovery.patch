@@ -1,0 +1,202 @@
+qmx-panadapter patch: esp_hosted SDIO oversize-length recovery + TX retry
+
+RX side: in RX_NONE mode an oversized pending-byte delta (> 1536) made the
+stock driver skip the interrupt WITHOUT reading or advancing its counter,
+livelocking the SDIO link -> every RPC to the C6 timed out forever (WiFi
+"died", reboot-only). Fixed: drain+discard the pending bytes in block-padded
+chunks and resync the counter; one frame is lost, the link survives.
+Hardware-verified. TX side: two CMD53 timeouts 11 ms apart used to
+esp_restart() the whole device; now 8 attempts * 2 ms, then drop the frame,
+with restart only after 32 consecutive failures. Pristine base:
+espressif/esp_hosted 1.4.0 (the version guard: do not force onto others).
+Target: managed_components (wiped by fullclean - re-apply after).
+
+Apply from the repo root:  git apply tools/patches/esp_hosted_sdio_recovery.patch
+
+--- a/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c
++++ b/managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c
+@@ -48,8 +48,20 @@
+ // max number of time to try to read write buffer available reg
+ #define MAX_WRITE_BUF_RETRIES             50
+ 
+-/* Actual data sdio_write max retry */
+-#define MAX_SDIO_WRITE_RETRY              2
++/* Actual data sdio_write max retry.
++ * PATCHED (qmx-panadapter, 2026-08-16): 2 -> 8, with a 2 ms pause between
++ * attempts (see sdio_write_task). Stock made both of its attempts inside 11 ms,
++ * which is not long enough to ride out a transient CMD53 timeout, and then
++ * rebooted the whole device. */
++#define MAX_SDIO_WRITE_RETRY              8
++
++/* PATCHED (qmx-panadapter, 2026-08-16): how many CONSECUTIVE packets may fail
++ * to go out before the link is judged genuinely dead and the host is restarted.
++ * A single dropped frame is normal on a shared bus and TCP handles it; 32 in a
++ * row is not, and at that point a restart really is the only way back. Cleared
++ * by any successful write, so transients cannot accumulate toward a reboot. */
++#define H_SDIO_TX_FAIL_STREAK_MAX         32
++static int sdio_tx_fail_streak = 0;
+ 
+ // this locks the sdio transaction at the driver level, instead of at the HAL layer
+ #define USE_DRIVER_LOCK
+@@ -105,6 +117,11 @@
+ 
+ /* Counter to hold the amount of bytes already received from sdio slave */
+ static uint32_t sdio_rx_byte_count = 0;
++
++/* QMX-panadapter recovery patch: scratch buffer used to drain+discard an
++ * oversized (> ESP_RX_BUFFER_SIZE) pending length so the RX channel can
++ * re-sync instead of livelocking forever. Allocated lazily on first oversize. */
++static uint8_t *sdio_oversize_drain_buf = NULL;
+ 
+ // one-time trigger to start write thread
+ static bool sdio_start_write_thread = false;
+@@ -245,13 +262,13 @@
+ 		len = temp + len;
+ 	}
+ 
+-#if H_SDIO_HOST_RX_MODE != H_SDIO_HOST_STREAMING_MODE
+-	if (len > ESP_RX_BUFFER_SIZE) {
+-		ESP_LOGE(TAG, "%s: Len from slave[%ld] exceeds max [%d]",
+-				__func__, len, ESP_RX_BUFFER_SIZE);
+-		return ESP_FAIL;
+-	}
+-#endif
++	/* QMX-panadapter recovery patch: the ">ESP_RX_BUFFER_SIZE -> return ESP_FAIL"
++	 * check that used to be here was REMOVED. In RX_NONE mode that FAIL made the
++	 * caller skip WITHOUT reading the bytes or advancing sdio_rx_byte_count, so
++	 * the identical oversized delta recurred every interrupt forever -> permanent
++	 * WiFi wedge (H_SDIO_DRV "exceeds max" followed by endless rpc_core 0x126
++	 * timeouts, power-cycle only). The RX task now detects the oversize case and
++	 * drains+discards to recover. Always return the raw computed length here. */
+ 
+ 	*rx_size = len;
+ 
+@@ -287,13 +304,13 @@
+ 		len = temp + len;
+ 	}
+ 
+-#if H_SDIO_HOST_RX_MODE != H_SDIO_HOST_STREAMING_MODE
+-	if (len > ESP_RX_BUFFER_SIZE) {
+-		ESP_LOGE(TAG, "%s: Len from slave[%ld] exceeds max [%d]",
+-				__func__, len, ESP_RX_BUFFER_SIZE);
+-		return ESP_FAIL;
+-	}
+-#endif
++	/* QMX-panadapter recovery patch: the ">ESP_RX_BUFFER_SIZE -> return ESP_FAIL"
++	 * check that used to be here was REMOVED. In RX_NONE mode that FAIL made the
++	 * caller skip WITHOUT reading the bytes or advancing sdio_rx_byte_count, so
++	 * the identical oversized delta recurred every interrupt forever -> permanent
++	 * WiFi wedge (H_SDIO_DRV "exceeds max" followed by endless rpc_core 0x126
++	 * timeouts, power-cycle only). The RX task now detects the oversize case and
++	 * drains+discards to recover. Always return the raw computed length here. */
+ 
+ 	*rx_size = len;
+ 
+@@ -480,15 +497,49 @@
+ 					retries, ret, len_to_send, data_left);
+ 				retries++;
+ 				if (retries < MAX_SDIO_WRITE_RETRY) {
+-					ESP_LOGD(TAG, "retry");
++					/* PATCHED (qmx-panadapter, 2026-08-16): pause between
++					 * attempts. Stock code retried immediately, so its two
++					 * tries were 11 ms apart - not a real attempt at riding
++					 * out a transient CMD53 timeout. */
++					g_h.funcs->_h_msleep(2);
+ 					continue;
+ 				} else {
++					/* PATCHED (qmx-panadapter, 2026-08-16): DROP THE PACKET,
++					 * DO NOT REBOOT THE DEVICE.
++					 *
++					 * Stock code calls _h_restart_host() here, which restarts
++					 * the whole P4 to avoid losing one WiFi frame. Captured on
++					 * hardware at ~51 min uptime: two CMD53 timeouts (0x107)
++					 * 11 ms apart, then a full restart. It is a clean
++					 * esp_restart(), so there is NO panic dump and the reset
++					 * reason reads SW_CPU_RESET - a user sees an unexplained
++					 * reboot, a clean log, and has nothing to report.
++					 *
++					 * Dropping the frame is the proportionate response and is
++					 * the precedent this same file already sets on the RX side:
++					 * one frame is lost, TCP/UDP retransmit, the link survives.
++					 *
++					 * The restart is KEPT as a genuine last resort: if writes
++					 * keep failing packet after packet the link really is dead,
++					 * and rebooting is then the only way back. Any successful
++					 * write clears the counter, so a transient can never walk
++					 * the device toward a reboot. */
++					sdio_tx_fail_streak++;
+ 					SDIO_DRV_UNLOCK();
+-					ESP_LOGE(TAG, "Unrecoverable host sdio state, reset host mcu");
+-					g_h.funcs->_h_restart_host();
++					if (sdio_tx_fail_streak >= H_SDIO_TX_FAIL_STREAK_MAX) {
++						ESP_LOGE(TAG, "Unrecoverable host sdio state, reset host mcu"
++							" (%d consecutive failed writes)", sdio_tx_fail_streak);
++						g_h.funcs->_h_restart_host();
++						goto done;
++					}
++					ESP_LOGW(TAG, "SDIO TX failed after %d tries - dropping this frame"
++						" (streak %d/%d); the link is left up",
++						retries, sdio_tx_fail_streak, H_SDIO_TX_FAIL_STREAK_MAX);
+ 					goto done;
+ 				}
+ 			}
++			/* A write got through: whatever that was, it was transient. */
++			sdio_tx_fail_streak = 0;
+ 
+ 			data_left -= len_to_send;
+ 			pos += len_to_send;
+@@ -871,6 +922,54 @@
+ 			SDIO_DRV_UNLOCK();
+ 			continue;
+ 		}
++
++		/* QMX-panadapter recovery: a pending length larger than the fixed
++		 * RX_NONE mempool buffer (ESP_RX_BUFFER_SIZE) cannot be read in one go.
++		 * Stock code returned ESP_FAIL from sdio_get_len_from_slave() and skipped
++		 * WITHOUT reading the bytes or advancing sdio_rx_byte_count, so the same
++		 * oversized delta recurred every interrupt forever -> permanent WiFi
++		 * wedge (endless rpc_core 0x126 timeouts, power-cycle only). Recover by
++		 * physically draining+discarding the pending bytes in <=ESP_RX_BUFFER_SIZE
++		 * block-padded chunks (identical CMD53 addressing to the normal read:
++		 * the pending tail ends at ESP_SLAVE_CMD53_END_ADDR), then advancing the
++		 * byte counter so the delta re-aligns to ~0. We lose one frame (TCP/UDP
++		 * retransmits) but WiFi survives. The diagnostic log captures host_cnt vs
++		 * slave_reg so a repro can distinguish counter-drift from genuine
++		 * oversize. */
++		if (len_from_slave > ESP_RX_BUFFER_SIZE) {
++			uint32_t slave_reg = 0;
++#if DO_COMBINED_REG_READ
++			slave_reg = (*read_len_index) & ESP_SLAVE_LEN_MASK;
++#endif
++			ESP_LOGW(TAG, "SDIO RX oversize: len=%lu host_cnt=%lu slave_reg=%lu - draining to recover",
++					(unsigned long)len_from_slave, (unsigned long)sdio_rx_byte_count,
++					(unsigned long)slave_reg);
++			/* An absurd delta means total desync; draining it would issue
++			 * hundreds of CMD53 reads to no benefit, so just re-align the
++			 * counter (best effort). */
++			if (len_from_slave <= (16u * (uint32_t)ESP_RX_BUFFER_SIZE)) {
++				if (!sdio_oversize_drain_buf)
++					sdio_oversize_drain_buf = (uint8_t *)MEM_ALLOC(MAX_SDIO_BUFFER_SIZE);
++				if (sdio_oversize_drain_buf) {
++					uint32_t d_left = len_from_slave;
++					while (d_left) {
++						uint32_t chunk = (d_left > (uint32_t)ESP_RX_BUFFER_SIZE)
++										? (uint32_t)ESP_RX_BUFFER_SIZE : d_left;
++						uint32_t block_len = ((chunk + ESP_BLOCK_SIZE - 1) / ESP_BLOCK_SIZE) * ESP_BLOCK_SIZE;
++						if (g_h.funcs->_h_sdio_read_block(sdio_handle,
++								ESP_SLAVE_CMD53_END_ADDR - d_left,
++								sdio_oversize_drain_buf, block_len, ACQUIRE_LOCK)) {
++							ESP_LOGE(TAG, "SDIO oversize drain read failed");
++							break;
++						}
++						d_left -= chunk;
++					}
++				}
++			}
++			sdio_rx_byte_count = (sdio_rx_byte_count + len_from_slave) % ESP_RX_BYTE_MAX;
++			SDIO_DRV_UNLOCK();
++			continue;
++		}
+ #endif
+ 
+ 		/* Allocate rx buffer */

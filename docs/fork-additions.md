@@ -67,6 +67,8 @@ Kept to the absolute minimum; the current complete list:
 | `.gitignore` | two entries (`/sim/build/`, `/stage1_diag.csv`) | port build output; ft8_lib's decode.c writes Stage-1 diag CSV in the CWD on host builds |
 | `.github/workflows/close-pull-requests.yml` | **removed** (on `main`) | upstream auto-closes PRs; this fork accepts them |
 | `C:devqmx-panadaptertestwav_reference/` (literal name, `:` as U+F03A) | **removed** | upstream copy accident — all 27 files verified byte-identical to `test/wav_reference/` |
+| `tools/patches/apply_*.ps1` (all six) | **removed**, replaced by standard unified diffs | the edits now live in `tools/patches/*.patch` (applicable with `git apply` / `patch`, available everywhere IDF is; `apply_patches.sh` applies all six, used by firmware CI); the byte-exact `esp_hosted_sdio_drv.c.patched` store/restore file is retired, its content encoded in the diff. Patch output verified byte-identical to the original scripts' |
+| `main/manual.bin` | still committed, but **CI regenerates it** for its build | fork policy: the artifact carries fresh docs; the committed blob stays for local/upstream compatibility (deleting it would conflict on every upstream docs release) |
 
 Everything else fork-side is a new file. `test/mock_rig_harness.c` follows
 upstream's own harness convention (links the real code, build line in its

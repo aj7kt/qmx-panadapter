@@ -1,0 +1,73 @@
+qmx-panadapter patch: cdc_acm_host_close() retries, never abort()s
+
+usb_host_interface_release() returns ESP_ERR_INVALID_STATE while any
+endpoint still has a URB in flight, and stock code feeds that into
+ESP_ERROR_CHECK - a transient becomes a device reboot (and a Tab5 warm
+reset with the radio attached is the documented #74 QMX-wedge trigger).
+Retry 16 x 20 ms (the real fix: IDF's 10 ms allowance is too short), then
+log and leak the claim rather than abort. Same precedent as the UAC fork's
+forced teardown. Pristine base: espressif/usb_host_cdc_acm 2.4.0.
+Target: managed_components (wiped by fullclean - re-apply after).
+
+Apply from the repo root:  git apply tools/patches/cdc_acm_close_tolerant.patch
+
+--- a/managed_components/espressif__usb_host_cdc_acm/cdc_acm_host.c
++++ b/managed_components/espressif__usb_host_cdc_acm/cdc_acm_host.c
+@@ -705,18 +705,52 @@
+     cdc_dev->data.in_cb = NULL;
+     CDC_ACM_EXIT_CRITICAL();
+ 
+-    // Cancel polling of BULK IN and INTERRUPT IN
++    // PATCHED (qmx-panadapter, 2026-08-16): none of these may abort().
++    // usb_host_interface_release() returns ESP_ERR_INVALID_STATE while any
++    // endpoint still has a URB in flight, and it allows the client task only
++    // vTaskDelay(10) - 10 ms at FREERTOS_HZ=1000 - to reap them. Feeding that
++    // into ESP_ERROR_CHECK turns a transient into a device reboot. Retry first
++    // (that is the real fix - the window is simply too short), then log and
++    // carry on so the device object is always freed.
+     if (cdc_dev->data.in_xfer) {
+-        ESP_ERROR_CHECK(cdc_acm_reset_transfer_endpoint(cdc_dev->dev_hdl, cdc_dev->data.in_xfer));
++        esp_err_t e = cdc_acm_reset_transfer_endpoint(cdc_dev->dev_hdl, cdc_dev->data.in_xfer);
++        if (e != ESP_OK) {
++            ESP_LOGW(TAG, "close: IN endpoint reset failed (%s) - continuing", esp_err_to_name(e));
++        }
+     }
+     if (cdc_dev->notif.xfer != NULL) {
+-        ESP_ERROR_CHECK(cdc_acm_reset_transfer_endpoint(cdc_dev->dev_hdl, cdc_dev->notif.xfer));
++        esp_err_t e = cdc_acm_reset_transfer_endpoint(cdc_dev->dev_hdl, cdc_dev->notif.xfer);
++        if (e != ESP_OK) {
++            ESP_LOGW(TAG, "close: notif endpoint reset failed (%s) - continuing", esp_err_to_name(e));
++        }
+     }
+ 
+     // Release all interfaces
+-    ESP_ERROR_CHECK(usb_host_interface_release(p_cdc_acm_obj->cdc_acm_client_hdl, cdc_dev->dev_hdl, cdc_dev->data.intf_desc->bInterfaceNumber));
++    for (int attempt = 0; attempt < 16; attempt++) {
++        esp_err_t e = usb_host_interface_release(p_cdc_acm_obj->cdc_acm_client_hdl, cdc_dev->dev_hdl, cdc_dev->data.intf_desc->bInterfaceNumber);
++        if (e == ESP_OK) {
++            break;
++        }
++        if (attempt == 15) {
++            ESP_LOGW(TAG, "close: data interface %d would not release (%s) - leaking the claim rather than aborting",
++                     cdc_dev->data.intf_desc->bInterfaceNumber, esp_err_to_name(e));
++            break;
++        }
++        vTaskDelay(pdMS_TO_TICKS(20));
++    }
+     if ((cdc_dev->notif.intf_desc != NULL) && (cdc_dev->notif.intf_desc != cdc_dev->data.intf_desc)) {
+-        ESP_ERROR_CHECK(usb_host_interface_release(p_cdc_acm_obj->cdc_acm_client_hdl, cdc_dev->dev_hdl, cdc_dev->notif.intf_desc->bInterfaceNumber));
++        for (int attempt = 0; attempt < 16; attempt++) {
++            esp_err_t e = usb_host_interface_release(p_cdc_acm_obj->cdc_acm_client_hdl, cdc_dev->dev_hdl, cdc_dev->notif.intf_desc->bInterfaceNumber);
++            if (e == ESP_OK) {
++                break;
++            }
++            if (attempt == 15) {
++                ESP_LOGW(TAG, "close: notif interface %d would not release (%s) - leaking the claim rather than aborting",
++                         cdc_dev->notif.intf_desc->bInterfaceNumber, esp_err_to_name(e));
++                break;
++            }
++            vTaskDelay(pdMS_TO_TICKS(20));
++        }
+     }
+ 
+     CDC_ACM_ENTER_CRITICAL();
