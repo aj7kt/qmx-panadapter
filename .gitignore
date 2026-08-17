@@ -5,6 +5,7 @@
 /build/
 /managed_components/
 /test/build/
+/sim/build/
 
 # mkdocs build output (root-level `mkdocs build` target — published to
 # tab5.lav.dk by manual FTP, never committed)
@@ -95,3 +96,4 @@ test/lotw_test_*.pem
 test/lotw_sample_tq8.txt
 test/device_tq8*
 .claude/
+
