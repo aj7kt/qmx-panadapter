@@ -64,7 +64,7 @@ Kept to the absolute minimum; the current complete list:
 |---|---|---|
 | `main/ui/ui.h` / `ui.c` | added `ui_drawer_is_open()` (one-line getter) | the port's View menu toggles the drawer |
 | `docs/qmx-reference/SOURCES.md` | one entry | records the cached CAT 1_04_004 manual the mock rig implements |
-| `.gitignore` | one line (`/sim/build/`) | port build output |
+| `.gitignore` | two entries (`/sim/build/`, `/stage1_diag.csv`) | port build output; ft8_lib's decode.c writes Stage-1 diag CSV in the CWD on host builds |
 | `.github/workflows/close-pull-requests.yml` | **removed** (on `main`) | upstream auto-closes PRs; this fork accepts them |
 | `C:devqmx-panadaptertestwav_reference/` (literal name, `:` as U+F03A) | **removed** | upstream copy accident — all 27 files verified byte-identical to `test/wav_reference/` |
 

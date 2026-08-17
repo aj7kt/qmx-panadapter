@@ -92,6 +92,10 @@ test/hx_*
 test/v_*
 # Stage 1/2 offline decode-harness diagnostics (regenerated per run)
 test/stage1_diag.csv
+# ...and at the repo root: ft8_lib's decode.c appends this in the CWD on any
+# host build (the SDL port regenerates it every FT8 session; on the ESP32 the
+# fopen silently fails, which is why it never appears on hardware)
+/stage1_diag.csv
 test/lotw_test_*.pem
 test/lotw_sample_tq8.txt
 test/device_tq8*
