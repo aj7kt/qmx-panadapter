@@ -66,6 +66,7 @@ Kept to the absolute minimum; the current complete list:
 | `docs/qmx-reference/SOURCES.md` | one entry | records the cached CAT 1_04_004 manual the mock rig implements |
 | `.gitignore` | one line (`/sim/build/`) | port build output |
 | `.github/workflows/close-pull-requests.yml` | **removed** (on `main`) | upstream auto-closes PRs; this fork accepts them |
+| `C:devqmx-panadaptertestwav_reference/` (literal name, `:` as U+F03A) | **removed** | upstream copy accident — all 27 files verified byte-identical to `test/wav_reference/` |
 
 Everything else fork-side is a new file. `test/mock_rig_harness.c` follows
 upstream's own harness convention (links the real code, build line in its
