@@ -121,6 +121,7 @@ void ui_set_cat_paused(bool paused);
  * /api/cmd {"action":"drawer"} dev action so a layout change can be checked on
  * a screenshot. Call with the display lock held. */
 void ui_set_drawer_open(bool open);
+bool ui_drawer_is_open(void);
 void ui_set_drawer_expert(bool expert);
 /* Scroll the open drawer so a section below the fold can be screenshotted. */
 void ui_set_drawer_scroll_y(int y);

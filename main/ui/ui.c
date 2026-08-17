@@ -8801,6 +8801,11 @@ void ui_set_drawer_open(bool open)
     else      drawer_close();
 }
 
+bool ui_drawer_is_open(void)
+{
+    return s_drawer_open;
+}
+
 // Force the Basic/Expert view from outside (the same dev action). Only exists so
 // the Expert layout can be checked on a screenshot; the operator's own route is
 // the toggle in the drawer header.
