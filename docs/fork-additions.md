@@ -71,6 +71,7 @@ Kept to the absolute minimum; the current complete list:
 | `main/manual.bin` | **untracked** (gitignored); `main/CMakeLists.txt` generates it when missing, CI always | it's a build artifact (`tools/pack_manual.py` from `docs/mkdocs/**`). Merge note: upstream re-commits it every docs release — resolve the modify/delete conflict by keeping it deleted |
 | `test/attenuate_wav.exe` | **untracked** | compiled output of `test/attenuate_wav.c` (was tracked despite the existing `test/*.exe` ignore) |
 | `tools/QMX-Panadapter-v0.18.7-flasher.zip` | **removed** + ignore pattern widened | a release artifact upstream's own `.gitignore` says never to commit — the existing pattern just missed this naming order |
+| `docs/` correspondence (32 files) | **removed** | announcement drafts, groups.io/user reply drafts, dated one-shot proposals for long-shipped features, and 3 unreferenced milestone screenshots. Technical docs kept: feasibility studies, design docs, the CAT comparison, the USB-wedge report, version history, serial-log howto |
 | `test/wav_reference_full/temp_repo` | **removed** (orphan gitlink) | upstream accident: a nested git clone committed as a submodule pointer with no `.gitmodules` entry — made `actions/checkout` warn `No url found for submodule path ... exit code 128` on every CI run |
 
 Everything else fork-side is a new file. `test/mock_rig_harness.c` follows
