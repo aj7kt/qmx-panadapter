@@ -77,6 +77,14 @@ tools/QMX-Panadapter flasher/esptool/
 tools/QMX-Panadapter flasher.zip
 tools/QMX-Panadapter-flasher-*.zip
 tools/QMX-Panadapter flasher/*.zip
+# ...and the other naming order the pattern above missed (a v0.18.7 zip was
+# accidentally committed under this name; removed in the fork)
+tools/QMX-Panadapter-v*-flasher.zip
+
+# Embedded user manual - a build artifact in this fork: generated from
+# docs/mkdocs by tools/pack_manual.py (main/CMakeLists.txt generates it when
+# missing; CI regenerates it always). Upstream commits it instead.
+/main/manual.bin
 
 # Local SWR capture helper + its output
 tools/_swr*.ps1

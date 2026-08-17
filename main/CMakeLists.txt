@@ -1,3 +1,25 @@
+# Fork policy: main/manual.bin (the embedded user manual) is a build artifact,
+# not committed - generate it from docs/mkdocs when missing so a fresh clone
+# builds. CI regenerates it unconditionally (.github/workflows/firmware-build.yml);
+# pack_manual.py is stdlib-only. Upstream commits the blob instead - if a merge
+# ever brings it back, prefer deletion (see docs/fork-additions.md).
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/manual.bin")
+    idf_build_get_property(python PYTHON)
+    if(NOT python)
+        set(python python3)
+    endif()
+    message(STATUS "Generating main/manual.bin from docs/mkdocs")
+    execute_process(
+        COMMAND ${python} "${CMAKE_CURRENT_SOURCE_DIR}/../tools/pack_manual.py"
+                --docs "${CMAKE_CURRENT_SOURCE_DIR}/../docs/mkdocs"
+                --nav-from-mkdocs "${CMAKE_CURRENT_SOURCE_DIR}/../mkdocs.yml"
+                --out "${CMAKE_CURRENT_SOURCE_DIR}/manual.bin"
+        RESULT_VARIABLE _pack_manual_rc)
+    if(NOT _pack_manual_rc EQUAL 0)
+        message(FATAL_ERROR "pack_manual.py failed (rc=${_pack_manual_rc}) - manual.bin could not be generated")
+    endif()
+endif()
+
 idf_component_register(
     SRCS
         "main.c"
