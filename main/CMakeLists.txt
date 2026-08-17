@@ -3,7 +3,7 @@
 # builds. CI regenerates it unconditionally (.github/workflows/firmware-build.yml);
 # pack_manual.py is stdlib-only. Upstream commits the blob instead - if a merge
 # ever brings it back, prefer deletion (see docs/fork-additions.md).
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/manual.bin")
+if(NOT CMAKE_BUILD_EARLY_EXPANSION AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/manual.bin")
     idf_build_get_property(python PYTHON)
     if(NOT python)
         set(python python3)
