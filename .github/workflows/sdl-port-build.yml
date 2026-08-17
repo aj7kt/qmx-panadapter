@@ -1,0 +1,37 @@
+name: SDL port build
+
+# Drift alarm for the platform boundary (docs/porting.md): the SDL desktop
+# port compiles the REAL main/ui/*.c against the *_sdl.c port siblings and
+# the esp_shim OSAL. If a change to main/ adds a dependency the port doesn't
+# cover (a new settings.h/cat.h/audio.h/dsp.h function without its *_sdl.c
+# counterpart, or a new ESP-IDF call the shim lacks), this build breaks —
+# at push time, not months later when someone next needs the simulator.
+#
+# Needs no ESP-IDF: LVGL is fetched from GitHub (pinned v9.2.2) when
+# managed_components/ is absent — see sim/CMakeLists.txt.
+
+on:
+  push:
+    paths:
+      - "main/**"
+      - "sim/**"
+      - "components/ft8_lib/**"
+      - ".github/workflows/sdl-port-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev
+
+      - name: Configure
+        run: cmake -S sim -B sim/build
+
+      - name: Build
+        run: cmake --build sim/build -j"$(nproc)"
