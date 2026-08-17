@@ -10,6 +10,10 @@ Manual FT8 TX work in particular):
   1_04 CAT changes; 1_04_002 added no CAT changes). Added 2026-07-03 for the 1_03↔1_04
   comparison in `docs/qmx-1_04-cat-comparison.md`.
 - `QMX_operation_manual_1.04.001.pdf` — QMX Operating Manual, firmware 1_04_001 (same purpose)
+- `cat_1_04_004.pdf` — QMX CAT Programming Manual, firmware 1_04_004 (from
+  https://www.qrp-labs.com/images/qmx/manuals/cat_1_04_004.pdf). Added 2026-08-17 as the
+  reference for the SDL port's mock transceiver (`sim/desktop/mock_rig.c`); `cat_1_04_004.txt`
+  is its pdftotext extract.
 
 `cat_103.txt` / `cat_104.txt` are local `pdftotext -layout` extracts of the two CAT
 manuals (also gitignored) — regenerate with `pdftotext -layout <pdf> <txt>` if missing.
