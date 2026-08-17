@@ -2,11 +2,15 @@
 // Tier-1 mechanical shim: just enough of ESP-IDF's esp_err.h for desktop
 // builds. See sim/README.md.
 //
-// stdlib.h: real ESP-IDF's header chain pulls this in transitively from
-// several places, so project files (e.g. ft8_time_modal.c's atoi() call)
-// rely on it being ambiently available without including it themselves.
-// esp_err.h is close to universally the first project include, so it's the
-// natural place to replicate that.
+// The REAL esp_err.h includes stdint.h, stdio.h, assert.h and stdlib.h, and
+// project headers rely on those guarantees without including them directly
+// (render_waterfall.h uses uint8_t via this chain; ft8_time_modal.c calls
+// atoi()). Mirror the real header exactly — macOS's libc masks a missing
+// stdint.h transitively, glibc does not, so this is what keeps the Linux CI
+// build honest.
+#include <stdint.h>
+#include <stdio.h>
+#include <assert.h>
 #include <stdlib.h>
 
 typedef int esp_err_t;
