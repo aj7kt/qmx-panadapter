@@ -17,11 +17,11 @@ closes.
 
 TWO RULES FOR THIS FILE:
 
-  1. The markers below are the SAME strings each apply_*.ps1 script tests for its
-     own idempotency. Do not invent a different marker here - if the two ever
-     disagree, this check starts lying, and a check that lies about patches is
-     worse than no check at all. When a patch script's marker changes, change it
-     here in the same commit.
+  1. The markers below are strings the corresponding tools/patches/*.patch
+     introduces into its target. Do not invent a different marker here - if the
+     two ever disagree, this check starts lying, and a check that lies about
+     patches is worse than no check at all. When a patch's marker changes,
+     change it here in the same commit.
 
   2. Missing patches are an ERROR, never a warning. A warning scrolls past in a
      long IDF build, which is exactly how it would go unnoticed again.
@@ -35,39 +35,39 @@ present-but-unpatched file that means trouble.
 import os
 import sys
 
-# (script to run, path relative to what, path, marker, why it matters)
+# (patch file under tools/patches/, path relative to what, path, marker, why it matters)
 #
 # "repo" = this checkout; "idf" = the pinned ESP-IDF install tree.
 PATCHES = [
-    ("apply_esp_hosted_psram.ps1", "repo",
+    ("esp_hosted_psram.patch", "repo",
      "managed_components/espressif__esp_hosted/host/port/include/os_wrapper.h",
      "extra_heap_caps = MALLOC_CAP_SPIRAM",
      "WiFi transport buffers stay in scarce internal DRAM; the device reboots "
      "under QMX+FT8 load when WiFi TX bursts"),
 
-    ("apply_esp_hosted_sdio_recovery.ps1", "repo",
+    ("esp_hosted_sdio_recovery.patch", "repo",
      "managed_components/espressif__esp_hosted/host/drivers/transport/sdio/sdio_drv.c",
      "SDIO RX oversize",
      "an oversized SDIO pending-byte delta livelocks the link: WiFi dies within "
      "minutes and every RPC times out forever (reboot is the only way out)"),
 
-    ("apply_cdc_acm_close_tolerant.ps1", "repo",
+    ("cdc_acm_close_tolerant.patch", "repo",
      "managed_components/espressif__usb_host_cdc_acm/cdc_acm_host.c",
      "PATCHED (qmx-panadapter, 2026-08-16)",
      "closing a CDC interface while a URB is in flight abort()s the device, i.e. "
      "a reboot on a busy port"),
 
-    ("apply_hcd_bulk_error_recovery.ps1", "idf",
+    ("hcd_bulk_error_recovery.patch", "idf",
      "components/usb/hcd_dwc.c",
      "PATCHED (qmx-panadapter, 2026-07-16)",
      "a transient USB bulk error abort()s the device instead of being retried"),
 
-    ("apply_hub_recover_tolerant.ps1", "idf",
+    ("hub_recover_tolerant.patch", "idf",
      "components/usb/hub.c",
      "PATCHED (qmx-panadapter, 2026-08-03)",
      "a root-port recover that races the hub FSM abort()s the device"),
 
-    ("apply_fatfs_exfat.ps1", "idf",
+    ("fatfs_exfat.patch", "idf",
      "components/fatfs/src/ffconf.h",
      "#define FF_FS_EXFAT\t1",
      "microSD cards larger than 32 GB (exFAT) will not mount"),
@@ -115,7 +115,8 @@ def main():
             print("")
             print("  %s" % rel)
             print("     consequence : %s" % why)
-            print("     fix         : powershell -File tools/patches/%s" % script)
+            print("     fix         : git apply tools/patches/%s" % script)
+            print("                   (or: sh tools/patches/apply_patches.sh)")
         print("")
         print("  These live outside version control (managed_components/ is git-ignored;")
         print("  the IDF-tree ones are per-build-machine), so a clean fetch, an")
