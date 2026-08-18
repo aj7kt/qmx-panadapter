@@ -230,3 +230,44 @@ would retire a small class of alignment bugs.
 **Sim role:** the entire visual iteration. This is the single most
 sim-friendly item on the list — font, spacing, and column layout transfer
 exactly, and a screenshot comparison decides it.
+
+### I-7: QMX on the Tab5's USB-C port (firmware/hardware-only — no sim role)
+**Want:** run the radio over a USB-C-to-C cable (the QMX has a C port),
+freeing the USB-A port and using the more convenient cable.
+
+**Known (verified against IDF v5.4.4 source, 2026-08-17):** the ESP32-P4
+has TWO OTG controllers (`SOC_USB_OTG_PERIPH_NUM = 2`): #0 is the
+High-Speed/UTMI one behind the USB-A port; #1 is a Full-Speed OTG 1.1 on
+the internal FSLS transceiver — the same pins the Tab5's USB-C uses for
+USB-Serial/JTAG (console + flashing), muxed. The host library supports
+running on #1 via `usb_host_config_t.peripheral_map = BIT1` — a RUNTIME
+install parameter, not a build option, so A↔C switching is a full
+host-stack teardown/reinstall cycle (historically the fragile zone: three
+of the six standing patches harden teardown paths). ONE host instance at
+a time — "Right now we support only one peripheral, can be extended in
+future" (`usb_host.c`) — so QMX-on-C + something-on-A simultaneously
+needs a future IDF.
+
+**Speed is NOT a blocker:** Full-Speed (12 Mbps) is a USB 2.0 speed class
+and the QMX is itself a Full-Speed device today, even on the A port. Its
+I/Q stream is ~2.3 Mbps; the FS isochronous frame budget holds it easily.
+
+**Measure/answer first (in order):**
+1. Hardware: can the Tab5's C port act as a DFP at all — VBUS *sourcing*
+   (it is the charging input; the only documented firmware-switchable 5 V
+   rail is the A port's `bsp_set_usb_5v_en`) and CC-pin role (a C-to-C
+   cable only negotiates if the Tab5 side presents Rp; charge-input ports
+   are wired as UFP/Rd). Schematic or bench experiment — this can kill
+   the whole idea before any firmware is written.
+2. Console loss: while the mux gives the pins to OTG 1.1, USB-Serial/JTAG
+   is gone — flashing falls back to boot-strap download mode, and serial
+   capture (the project's primary diagnostic) is unavailable. Decide the
+   debug story before shipping anything.
+3. UAC on the FS controller instance: the firmware's ISO pipeline (the
+   hard-won 320 ms queue depth, #51) has only ever run on the HS
+   instance; the two controllers have different FIFO sizes
+   (`fifo_settings_custom` exists for this). Soak FT8 decode-per-slot on
+   #1 before trusting it.
+
+**Sim role:** none — the port abstracts USB entirely (a QMX on the dev
+machine is an ordinary serial + audio device regardless of which cable).
